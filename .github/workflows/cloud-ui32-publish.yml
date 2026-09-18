@@ -1,0 +1,63 @@
+name: Publish reviewed Cloud UI 3.2
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-ui32-publish.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: cloud-ui32-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Checkout current public demo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: gh-pages
+          path: published
+          fetch-depth: 1
+      - name: Build only from approved baseline and verify exact reviewed bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, subprocess, tempfile, re
+          target=Path('published/index.html')
+          expected='c899a0425d795d79aed385f10fa3f1eabd4ddc31bc2296ef964b0e81e8cafefb'
+          if hashlib.sha256(target.read_bytes()).hexdigest()!=expected:
+              subprocess.run(['python3','source/_ui32/apply.py',str(target),str(target)],check=True)
+          raw=target.read_bytes()
+          assert len(raw)==306939 and hashlib.sha256(raw).hexdigest()==expected, 'Candidate differs from locally tested Cloud 3.2'
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>',raw.decode(),flags=re.S)
+          assert scripts, 'Missing interactive code'
+          with tempfile.NamedTemporaryFile(mode='w',suffix='.js',encoding='utf-8') as f:
+              f.write('\n'.join(scripts)); f.flush()
+              subprocess.run(['node','--check',f.name],check=True)
+          print('Verified standalone Cloud 3.2:',expected)
+          PY
+      - name: Commit only index.html without force push
+        working-directory: published
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- index.html
+          if git diff --cached --quiet; then
+            echo 'Cloud 3.2 is already published to the source branch.'
+          else
+            git commit -m 'Cloud 3.2: file studio, tutor context, group teachers and readable themes'
+            git push origin HEAD:gh-pages
+          fi
