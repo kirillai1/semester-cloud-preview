@@ -1,0 +1,57 @@
+name: Verify Cloud UI 3.2
+on:
+  push:
+    branches: [main]
+    paths:
+      - '_ui32/**'
+      - '.github/workflows/cloud-ui32-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cloud-ui32-check
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Preserve exact published baseline
+        shell: bash
+        run: |
+          mkdir -p review-output
+          git show a6dd0ef2863c7d2a2a204b781da1a10ac9f1f872:index.html > review-output/baseline.html
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          raw=Path('review-output/baseline.html').read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='d18f43f7e493e4bf07fc69e9ddbbc2735484c242f686007fc8e2b848e3f713f0'
+          print('Published Cloud 3.1 baseline verified')
+          PY
+      - name: Build candidate when its source is complete
+        shell: bash
+        run: |
+          if [ -f _ui32/apply.py ]; then
+            python3 _ui32/apply.py review-output/baseline.html review-output/index.html
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('review-output')
+          html=(p/'index.html').read_text()
+          for i,script in enumerate(re.findall(r'<script[^>]*>([\s\S]*?)</script>',html)):
+              (p/f'script-{i}.js').write_text(script)
+          PY
+            for script in review-output/script-*.js; do node --check "$script"; done
+          fi
+      - name: Keep candidate and source for browser verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-ui32-review
+          retention-days: 7
+          path: |
+            review-output/
+            _ui32/
+            _ui31/
