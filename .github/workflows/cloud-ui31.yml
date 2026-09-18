@@ -1,0 +1,84 @@
+name: Publish reviewed Cloud UI 3.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '_ui31/**'
+      - '.github/workflows/cloud-ui31.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cloud-ui31-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Checkout current standalone preview
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: gh-pages
+          path: published
+          fetch-depth: 1
+      - name: Apply exact reviewed update without replacing other files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import subprocess
+          target=Path('published/index.html')
+          expected='d18f43f7e493e4bf07fc69e9ddbbc2735484c242f686007fc8e2b848e3f713f0'
+          if hashlib.sha256(target.read_bytes()).hexdigest()!=expected:
+              subprocess.run(['python3','source/_ui31/apply.py',str(target),str(target)],check=True)
+          data=target.read_bytes()
+          if len(data)!=237618 or hashlib.sha256(data).hexdigest()!=expected:
+              raise SystemExit('Output differs from reviewed local Cloud 3.1')
+          print('Cloud 3.1 output integrity verified:',expected)
+          PY
+      - name: Check inline JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+          import tempfile
+          html=Path('published/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>',html,flags=re.S)
+          if not scripts:
+              raise SystemExit('Missing interactive script')
+          with tempfile.NamedTemporaryFile(mode='w',suffix='.js',encoding='utf-8') as f:
+              f.write('\n'.join(scripts))
+              f.flush()
+              subprocess.run(['node','--check',f.name],check=True)
+          print('Inline JavaScript syntax checked; standalone HTML retained')
+          PY
+      - name: Commit only the reviewed page without force push
+        working-directory: published
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- index.html
+          if git diff --cached --quiet; then
+            echo 'Reviewed Cloud 3.1 is already in gh-pages.'
+          else
+            git commit -m 'Cloud 3.1: clear navigation, attendance periods, redesigned tutor'
+            git push origin HEAD:gh-pages
+          fi
