@@ -1,0 +1,10 @@
+{
+  "html_bytes": 199223,
+  "html_sha256": "ee4d6c53324a417a3dbb1ea4bed55779d71496aaba70c25953e7f07c5dff0769",
+  "parts": [
+    {"name":"cloud-part-00.txt","bytes":16001,"sha256":"2f8f998e789e1d51936ef221b1f7a91d550e2c1d06c605acb104cf85acb99aad"},
+    {"name":"cloud-part-01.txt","bytes":16001,"sha256":"8dcb6eff5092f71c83a4ff32c8664053de2f4016c9b56e86b58a3b480c672a81"},
+    {"name":"cloud-part-02.txt","bytes":16001,"sha256":"4acf3d86b0590f100391142a50b83f94b61f344fb32c88782716e391f65dbbe6"},
+    {"name":"cloud-part-03.txt","bytes":12653,"sha256":"232e337b50e2074e76f9645a89c132dd1fbaadbc0eac294decf04f850cc21e6a"}
+  ]
+}
