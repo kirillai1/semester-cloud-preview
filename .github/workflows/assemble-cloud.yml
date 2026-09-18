@@ -1,0 +1,71 @@
+name: Assemble verified Cloud v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '_publish/**'
+      - '.github/workflows/assemble-cloud.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: assemble-cloud-main
+  cancel-in-progress: false
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the dedicated demo repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Restore the exact existing standalone HTML
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import lzma
+          from pathlib import Path
+
+          root = Path('_publish')
+          manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
+          names = [f'cloud-part-{n:02d}.txt' for n in range(4)]
+          if [item['name'] for item in manifest['parts']] != names:
+              raise SystemExit('Unexpected transfer file list')
+          encoded = []
+          for item in manifest['parts']:
+              raw = (root / item['name']).read_bytes()
+              if len(raw) != item['bytes'] or hashlib.sha256(raw).hexdigest() != item['sha256']:
+                  raise SystemExit('Transfer checksum mismatch: ' + item['name'])
+              encoded.append(raw.strip())
+          packed = base64.b64decode(b''.join(encoded), validate=True)
+          html = lzma.decompress(packed, memlimit=256 * 1024 * 1024)
+          expected = 'ee4d6c53324a417a3dbb1ea4bed55779d71496aaba70c25953e7f07c5dff0769'
+          if len(html) != 199223 or hashlib.sha256(html).hexdigest() != expected:
+              raise SystemExit('Original Cloud v3 HTML checksum mismatch')
+          html.decode('utf-8')
+          Path('index.html').write_bytes(html)
+          Path('.nojekyll').write_text('', encoding='utf-8')
+          Path('robots.txt').write_text('User-agent: *\nDisallow: /\n', encoding='utf-8')
+          print('Verified original Cloud v3: 199223 bytes; SHA256 ' + expected)
+          PY
+      - name: Commit only the verified static site files
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- index.html .nojekyll robots.txt
+          if git diff --cached --quiet; then
+            echo 'The exact verified site is already in main.'
+          else
+            git commit -m 'Publish byte-verified standalone Cloud v3 demo'
+            git push origin HEAD:main
+          fi
